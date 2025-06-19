@@ -1,0 +1,314 @@
+# Complete Startup Domain and API Setup Guide (Production-Ready)
+
+This document provides an end-to-end guide for a startup that has purchased a domain (e.g., `theadtip.in`) to set up a production-ready environment. It covers website hosting (`www`), email services (`vivek@theadtip.in` via Zoho Mail or Google Workspace), subdomains (`api.theadtip.in`, `bot.theadtip.in`, etc.), backend integration (Node.js/Python on AWS), HTTPS/SSL, DNS security, monitoring, and scalability. The guide is designed for clarity, with tables and steps to avoid errors, suitable for beginners and production environments.
+
+## Prerequisites
+- **Domain**: `theadtip.in` (purchased from Squarespace, GoDaddy, Namecheap, or similar).
+- **Backend Server**: AWS EC2 instance (IP: `203.0.113.10`) running Node.js or Python.
+- **Access**: Registrar/DNS provider dashboard, AWS account, SSH access to EC2.
+- **Tools**: Terminal, `dig`/`nslookup`, Postman for API testing.
+
+## Part 1: Domain Setup for Website and Email
+
+### Step 1: Set Up DNS Provider
+- **Choose a DNS Provider**: Use your registrar’s DNS (e.g., Squarespace) or a third-party like Cloudflare for better security and performance.
+- **Action**: If switching to Cloudflare:
+  - Sign up at `cloudflare.com`.
+  - Add `theadtip.in` and follow instructions to update nameservers at your registrar (e.g., change to `ns1.cloudflare.com`, `ns2.cloudflare.com`).
+- **Verify**: Check nameserver propagation with `whois.domaintools.com`.
+
+### Step 2: Configure `www` and Root Domain (`@`) for Website
+- **Goal**: Make `www.theadtip.in` and `theadtip.in` point to your website.
+- **Steps**:
+  1. **Access DNS Management**: Log in to your DNS provider’s dashboard.
+  2. **Add Records**:
+     - For Squarespace hosting:
+       | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+       |----------|----------|-------------|---------|------------------|
+       | CNAME | www | ext-cust.squarespace.com | 3600 | Proxied |
+       | A | @ | 198.49.23.144 | 3600 | Proxied |
+     - For AWS EC2 (IP: `203.0.113.10`):
+       | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+       |----------|----------|-------------|---------|------------------|
+       | A | www | 203.0.113.10 | 3600 | Proxied |
+       | A | @ | 203.0.113.10 | 3600 | Proxied |
+  3. **Configure Hosting**:
+     - Squarespace: Link domain in “Domains” settings.
+     - AWS: Configure Nginx/Apache to handle `www.theadtip.in` and `theadtip.in`.
+  4. **Test**: Visit `www.theadtip.in` and `theadtip.in` after propagation (1–48 hours).
+
+### Step 3: Set Up Email (`vivek@theadtip.in`)
+Choose either **Zoho Mail** or **Google Workspace** for email. You cannot use both for the same domain unless subdomains are used.
+
+#### Option 1: Zoho Mail
+1. **Sign Up**: Go to `mail.zoho.com`, select a plan, and add `theadtip.in`.
+2. **Verify Domain**:
+   - Add a TXT record:
+     | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+     |----------|----------|-------------|---------|------------------|
+     | TXT | @ | zmverify.zoho.com | 3600 | DNS Only |
+3. **Add MX Records**:
+   | **Type** | **Name** | **Content** | **Priority** | **TTL** | **Proxy Status** |
+   |----------|----------|-------------|--------------|---------|------------------|
+   | MX | @ | mx.zoho.com | 10 | 3600 | DNS Only |
+   | MX | @ | mx2.zoho.com | 20 | 3600 | DNS Only |
+   | MX | @ | mx3.zoho.com | 50 | 3600 | DNS Only |
+4. **Add SPF and DKIM**:
+   | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+   |----------|----------|-------------|---------|------------------|
+   | TXT | @ | v=spf1 include:zoho.com ~all | 3600 | DNS Only |
+   - Follow Zoho’s DKIM setup for another TXT record.
+5. **Create Accounts**: Add `vivek@theadtip.in` in Zoho Admin Console.
+6. **Test**: Send/receive emails to `vivek@theadtip.in`.
+
+#### Option 2: Google Workspace
+1. **Sign Up**: Go to `workspace.google.com`, select a plan, and add `theadtip.in`.
+2. **Verify Domain**:
+   | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+   |----------|----------|-------------|---------|------------------|
+   | TXT | @ | google-site-verification=abc123 | 3600 | DNS Only |
+3. **Add MX Records**:
+   | **Type** | **Name** | **Content** | **Priority** | **TTL** | **Proxy Status** |
+   |----------|----------|-------------|--------------|---------|------------------|
+   | MX | @ | aspmx.l.google.com | 1 | 3600 | DNS Only |
+   | MX | @ | alt1.aspmx.l.google.com | 5 | 3600 | DNS Only |
+   | MX | @ | alt2.aspmx.l.google.com | 5 | 3600 | DNS Only |
+   | MX | @ | alt3.aspmx.l.google.com | 10 | 3600 | DNS Only |
+   | MX | @ | alt4.aspmx.l.google.com | 10 | 3600 | DNS Only |
+4. **Add SPF and DKIM**:
+   | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+   |----------|----------|-------------|---------|------------------|
+   | TXT | @ | v=spf1 include:_spf.google.com ~all | 3600 | DNS Only |
+   - Set up DKIM in Google Admin Console.
+5. **Enable Google Login**: Users can log in with `vivek@theadtip.in` for Gmail, Drive, etc.
+6. **Test**: Verify email and Google services access.
+
+### Step 4: Add Subdomains
+Create subdomains like `bot.theadtip.in`, `web.theadtip.in`, or `app.theadtip.in`.
+
+#### Steps:
+1. **Add DNS Record**:
+   - Example for `bot.theadtip.in`:
+     | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+     |----------|----------|-------------|---------|------------------|
+     | A | bot | 203.0.113.11 | 3600 | DNS Only |
+   - Or use CNAME for aliasing:
+     | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+     |----------|----------|-------------|---------|------------------|
+     | CNAME | web | www.theadtip.in | 3600 | Proxied |
+2. **Configure Server**: Update server config (e.g., Nginx) to handle the subdomain.
+3. **Test**: Visit `bot.theadtip.in` after propagation.
+
+#### Subdomain Limits
+- **No Strict Limit**: Most DNS providers allow thousands of subdomains (e.g., Cloudflare’s free plan supports up to 3,000 records).
+- **Constraints**:
+  - DNS provider record limits (check with your provider).
+  - Server capacity to handle traffic for multiple subdomains.
+  - Management complexity (tracking many subdomains).
+- **Examples**: You can create `bot.theadtip.in`, `web.theadtip.in`, `app.theadtip.in`, etc., without issue.
+
+### Step 5: DNS Security and Best Practices
+Secure your domain for production use.
+
+1. **Enable DNSSEC**:
+   - At your registrar, enable DNSSEC to prevent DNS spoofing.
+   - Add a DS record if using a third-party DNS provider like Cloudflare.
+2. **Add DMARC Record**:
+   - Prevent email spoofing:
+     | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+     |----------|----------|-------------|---------|------------------|
+     | TXT | _dmarc | v=DMARC1; p=quarantine; rua=mailto:dmarc@theadtip.in; | 3600 | DNS Only |
+3. **Add CAA Record**:
+   - Restrict whichcertificate authorities can issue SSL certificates:
+     | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+     |----------|----------|-------------|---------|------------------|
+     | CAA | @ | 0 issue "letsencrypt.org" | 3600 | DNS Only |
+4. **Use a Secure DNS Provider**:
+   - Cloudflare or Google Cloud DNS offers DDoS protection and fast resolution.
+
+### Step 6: Backup and Monitoring
+- **Backup DNS Records**:
+  - Export DNS settings from your provider (e.g., Cloudflare’s “Export Zone File”).
+  - Store in a secure location (e.g., GitHub private repo or encrypted drive).
+- **Monitor DNS and Uptime**:
+  - Use tools like `uptimerobot.com` or `pingdom.com` to monitor `theadtip.in` and subdomains.
+  - Set up alerts for DNS resolution failures.
+
+## Part 2: Setting Up `api.theadtip.in` for Backend with HTTPS/SSL
+
+### Step 1: Add Subdomain DNS Record
+Map `api.theadtip.in` to your AWS EC2 instance (IP: `203.0.113.10`).
+
+#### Steps:
+1. **Add A Record**:
+   | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+   |----------|----------|-------------|---------|------------------|
+   | A | api | 203.0.113.10 | 300 | DNS Only |
+   - **TTL**: Use 300 (5 minutes) for testing, increase to 3600 for production.
+   - **Proxy Status**: DNS Only for APIs to avoid proxy interference.
+2. **Verify Propagation**:
+   - Run `dig api.theadtip.in` or use `dnschecker.org`.
+   - Expect 1–48 hours for full propagation.
+
+### Step 2: Configure AWS EC2 Backend
+Assume a Node.js or Python (e.g., Flask) app running on port 3000.
+
+#### Steps:
+1. **SSH into EC2**:
+   - `ssh -i <your-key.pem> ec2-user@203.0.113.10`
+2. **Install Nginx**:
+   - For Ubuntu:
+     ```bash
+     sudo apt update
+     sudo apt install nginx
+     ```
+3. **Configure Nginx**:
+   - Create `/etc/nginx/conf.d/api.theadtip.in.conf`:
+     ```nginx
+     server {
+         listen 80;
+         server_name api.theadtip.in;
+         location / {
+             proxy_pass http://localhost:3000;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+             proxy_set_header X-Forwarded-Proto $scheme;
+         }
+     }
+     ```
+4. **Start Backend**:
+   - Node.js: `node server.js` (ensure it listens on port 3000).
+   - Python (Flask): `app.run(host='0.0.0.0', port=3000)`.
+5. **Test Nginx**:
+   - `sudo nginx -t`
+   - `sudo systemctl restart nginx`
+
+### Step 3: Secure with HTTPS/SSL
+Use Let’s Encrypt for a free SSL certificate.
+
+#### Steps:
+1. **Install Certbot**:
+   - ```bash
+     sudo snap install --classic certbot
+     sudo ln -s /snap/bin/certbot /usr/bin/certbot
+     ```
+2. **Obtain Certificate**:
+   - ```bash
+     sudo certbot --nginx -d api.theadtip.in
+     ```
+   - Certbot updates Nginx config to use SSL.
+3. **Verify Nginx Config**:
+   - `/etc/nginx/conf.d/api.theadtip.in.conf` should look like:
+     ```nginx
+     server {
+         listen 443 ssl;
+         server_name api.theadtip.in;
+         ssl_certificate /etc/letsencrypt/live/api.theadtip.in/fullchain.pem;
+         ssl_certificate_key /etc/letsencrypt/live/api.theadtip.in/privkey.pem;
+         location / {
+             proxy_pass http://localhost:3000;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+             proxy_set_header X-Forwarded-Proto $scheme;
+         }
+     }
+     server {
+         listen 80;
+         server_name api.theadtip.in;
+         return 301 https://$host$request_uri;
+     }
+     ```
+4. **Enable HSTS** (optional, for security):
+   - Add to Nginx SSL server block:
+     ```nginx
+     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+     ```
+5. **Auto-Renew Certificate**:
+   - Test: `sudo certbot renew --dry-run`
+
+### Step 4: Configure AWS Security Group
+Allow HTTP/HTTPS traffic to EC2.
+
+#### Steps:
+1. **Go to AWS EC2 Console** > “Security Groups”.
+2. **Add Inbound Rules**:
+   | **Type** | **Protocol** | **Port Range** | **Source** |
+   |----------|--------------|----------------|------------|
+   | HTTP | TCP | 80 | 0.0.0.0/0 |
+   | HTTPS | TCP | 443 | 0.0.0.0/0 |
+3. **Save** and verify.
+
+### Step 5: Production Enhancements
+1. **Rate Limiting** (prevent abuse):
+   - Add to Nginx config:
+     ```nginx
+     limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+     server {
+         ...
+         location / {
+             limit_req zone=api_limit burst=20;
+             ...
+         }
+     }
+     ```
+2. **CORS for APIs**:
+   - Add CORS headers in your backend (Node.js example):
+     ```javascript
+     app.use((req, res, next) => {
+         res.header('Access-Control-Allow-Origin', 'https://theadtip.in');
+         res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+         res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+         next();
+     });
+     ```
+3. **Load Balancing** (for scalability):
+   - Use AWS Elastic Load Balancer (ELB):
+     - Create an Application Load Balancer in AWS.
+     - Add multiple EC2 instances.
+     - Update A record to point to ELB’s DNS name:
+       | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+       |----------|----------|-------------|---------|------------------|
+       | CNAME | api | elb-123.us-east-1.elb.amazonaws.com | 300 | DNS Only |
+4. **DDoS Protection**:
+   - Use Cloudflare’s proxy for `api.theadtip.in` or AWS Shield.
+
+### Step 6: Test and Validate
+1. **Test API**:
+   - `curl https://api.theadtip.in/api` or use Postman.
+   - Verify response matches your backend output.
+2. **Validate SSL**:
+   - Use `ssllabs.com/ssltest` to check certificate setup.
+3. **Monitor Uptime**:
+   - Set up `uptimerobot.com` for `api.theadtip.in`.
+
+### Step 7: Troubleshooting
+| **Issue** | **Solution** |
+|-----------|--------------|
+| DNS not resolving | Verify A record and propagation with `dnschecker.org`. |
+| 502 Bad Gateway | Check backend (port 3000) and Nginx proxy settings. |
+| SSL handshake failure | Ensure certificate paths in Nginx are correct. |
+| Connection timeout | Verify AWS security group allows ports 80/443. |
+
+## Final DNS Table
+| **Type** | **Name** | **Content** | **TTL** | **Proxy Status** | **Purpose** |
+|----------|----------|-------------|---------|------------------|-------------|
+| A | www | 203.0.113.10 | 3600 | Proxied | Website |
+| A | @ | 203.0.113.10 | 3600 | Proxied | Root domain |
+| A | api | 203.0.113.10 | 300 | DNS Only | API backend |
+| MX | @ | aspmx.l.google.com | 3600 | DNS Only | Google Email |
+| TXT | @ | v=spf1 include:_spf.google.com ~all | 3600 | DNS Only | Email security |
+| TXT | _dmarc | v=DMARC1; p=quarantine; | 3600 | DNS Only | Email security |
+| CAA | @ | 0 issue "letsencrypt.org" | 3600 | DNS Only | SSL restriction |
+
+## Saving This Information
+- Save as `Complete_Startup_Domain_and_API_Setup.md` in a text editor or knowledge base (e.g., Notion, Obsidian).
+- Back up DNS records via your provider’s export feature.
+- Store server configs in a Git repository for version control.
+
+## Additional Notes
+- **Automation**: Use Terraform or AWS CLI to automate DNS and server setup.
+- **Scalability**: Consider AWS Auto Scaling for high traffic.
+- **Cost Management**: Monitor AWS costs (EC2, ELB) and DNS provider fees.
+- This guide ensures a production-ready setup with no critical steps missed.

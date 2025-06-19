@@ -1,0 +1,160 @@
+# Setting Up Subdomain `api.theadtip.in` for Backend with HTTPS/SSL
+
+This guide details how to create a subdomain (`api.theadtip.in`), map it to a backend (Node.js or Python) hosted on AWS, secure it with HTTPS/SSL, and ensure it’s accessible as `https://api.theadtip.in/api` instead of `http://<IP>`. The steps are designed to be error-free and beginner-friendly.
+
+## Prerequisites
+- **Domain**: `theadtip.in` (managed by Squarespace or another registrar).
+- **Backend Server**: Node.js or Python app hosted on AWS (e.g., EC2 with IP `203.0.113.10`).
+- **Access**: AWS account and DNS management access.
+- **Tools**: Terminal access to your server, basic knowledge of Nginx or server configuration.
+
+## Step 1: Add Subdomain in DNS
+Map `api.theadtip.in` to your server’s IP address.
+
+### Steps:
+1. **Log in to DNS Management**:
+   - Access your registrar’s DNS panel (e.g., Squarespace > Domains > Manage DNS).
+2. **Add an A Record**:
+   - Create a record for `api.theadtip.in`:
+     | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+     |----------|----------|-------------|---------|------------------|
+     | A | api | 203.0.113.10 | 3600 | DNS Only |
+   - **Note**: Use **DNS Only** for APIs to avoid proxy interference with non-HTTP traffic.
+3. **Verify Propagation**:
+   - Wait 1–48 hours (depending on TTL).
+   - Run `dig api.theadtip.in` or use `dnschecker.org` to confirm it resolves to `203.0.113.10`.
+
+## Step 2: Configure Backend Server
+Assume a Node.js or Python backend hosted on AWS EC2 (`203.0.113.10`). Install Nginx as a reverse proxy to handle requests.
+
+### Steps:
+1. **SSH into Your EC2 Instance**:
+   - Use `ssh -i <your-key.pem> ec2-user@203.0.113.10`.
+2. **Install Nginx**:
+   - For Ubuntu:
+     ```bash
+     sudo apt update
+     sudo apt install nginx
+     ```
+3. **Configure Nginx for `api.theadtip.in`**:
+   - Create/edit `/etc/nginx/conf.d/api.theadtip.in.conf`:
+     ```nginx
+     server {
+         listen 80;
+         server_name api.theadtip.in;
+         location / {
+             proxy_pass http://localhost:3000; # Node.js or Python app port
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         }
+     }
+     ```
+   - For Node.js: Ensure your app runs on port 3000 (e.g., `node server.js`).
+   - For Python (e.g., Flask): Ensure it runs on port 3000 (e.g., `app.run(port=3000)`).
+4. **Test and Restart Nginx**:
+   - `sudo nginx -t` (check config syntax).
+   - `sudo systemctl restart nginx`.
+
+## Step 3: Obtain and Install SSL Certificate
+Use **Let’s Encrypt** with Certbot for a free SSL certificate to enable HTTPS.
+
+### Steps:
+1. **Install Certbot**:
+   - For Ubuntu:
+     ```bash
+     sudo snap install --classic certbot
+     sudo ln -s /snap/bin/certbot /usr/bin/certbot
+     ```
+2. **Obtain SSL Certificate**:
+   - Run:
+     ```bash
+     sudo certbot --nginx -d api.theadtip.in
+     ```
+   - Follow prompts to verify domain ownership (Certbot updates Nginx config automatically).
+   - Certificate files are stored in `/etc/letsencrypt/live/api.theadtip.in/`.
+3. **Verify HTTPS**:
+   - Nginx config should now include:
+     ```nginx
+     server {
+         listen 443 ssl;
+         server_name api.theadtip.in;
+         ssl_certificate /etc/letsencrypt/live/api.theadtip.in/fullchain.pem;
+         ssl_certificate_key /etc/letsencrypt/live/api.theadtip.in/privkey.pem;
+         location / {
+             proxy_pass http://localhost:3000;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         }
+     }
+     server {
+         listen 80;
+         server_name api.theadtip.in;
+         return 301 https://$host$request_uri; # Redirect HTTP to HTTPS
+     }
+     ```
+4. **Enable Auto-Renewal**:
+   - Certbot sets up a cron job for auto-renewal. Test with:
+     ```bash
+     sudo certbot renew --dry-run
+     ```
+
+## Step 4: Configure AWS Security Group
+Ensure your EC2 instance allows HTTP and HTTPS traffic.
+
+### Steps:
+1. **Go to AWS EC2 Console**:
+   - Navigate to “Security Groups” for your instance.
+2. **Add Inbound Rules**:
+   | **Type** | **Protocol** | **Port Range** | **Source** |
+   |----------|--------------|----------------|------------|
+   | HTTP | TCP | 80 | 0.0.0.0/0 |
+   | HTTPS | TCP | 443 | 0.0.0.0/0 |
+3. **Save** and verify connectivity.
+
+## Step 5: Test the API
+- Access `https://api.theadtip.in/api` (replace `/api` with your endpoint).
+- Use tools like Postman or `curl`:
+  ```bash
+  curl https://api.theadtip.in/api
+  ```
+- Verify the response matches your backend output.
+
+## Step 6: Troubleshooting
+| **Issue** | **Solution** |
+|-----------|--------------|
+| DNS not resolving | Check DNS records and propagation with `dnschecker.org`. |
+| HTTP 502/504 | Ensure backend app is running on port 3000 and Nginx is configured correctly. |
+| SSL errors | Verify Certbot installation and certificate paths in Nginx config. |
+| Connection refused | Check AWS security group for ports 80/443. |
+
+## Final DNS and Server Configuration
+- **DNS Record**:
+  | **Type** | **Name** | **Content** | **TTL** | **Proxy Status** |
+  |----------|----------|-------------|---------|------------------|
+  | A | api | 203.0.113.10 | 3600 | DNS Only |
+- **Nginx Config** (`/etc/nginx/conf.d/api.theadtip.in.conf`):
+  ```nginx
+  server {
+      listen 443 ssl;
+      server_name api.theadtip.in;
+      ssl_certificate /etc/letsencrypt/live/api.theadtip.in/fullchain.pem;
+      ssl_certificate_key /etc/letsencrypt/live/api.theadtip.in/privkey.pem;
+      location / {
+          proxy_pass http://localhost:3000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      }
+  }
+  server {
+      listen 80;
+      server_name api.theadtip.in;
+      return 301 https://$host$request_uri;
+  }
+  ```
+
+## Accessing the Backend
+- Your API is now accessible at `https://api.theadtip.in/api` securely.
+- Update your frontend or clients to use this URL instead of `http://203.0.113.10`.
